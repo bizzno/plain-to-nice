@@ -228,6 +228,28 @@
       border-color: var(--border2);
       color: var(--text);
     }
+
+    .guide-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn-share {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--dim);
+      padding: 0.25rem 0.6rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .btn-share:hover { border-color: var(--border2); color: var(--text); }
+    .btn-share.copied { color: var(--accent); border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -243,7 +265,10 @@
     </div>
 
     <div id="guide-view">
-      <div class="guide-title" id="guide-title"></div>
+      <div class="guide-header">
+        <div class="guide-title" id="guide-title"></div>
+        <button class="btn-share" id="share-btn" title="Copy link">link</button>
+      </div>
       <div class="progress-text" id="progress-text"></div>
       <div class="progress-bar"><div class="progress-bar-fill" id="progress-fill"></div></div>
       <div id="sections"></div>
@@ -252,29 +277,71 @@
   </div>
 
   <script>
-    // !! Replace with your Cloudflare Worker URL after deploying !!
     const WORKER_URL = "https://plain-to-nice.alexander-4c2.workers.dev";
 
     const inputView = document.getElementById("input-view");
     const guideView = document.getElementById("guide-view");
     const rawInput = document.getElementById("raw-input");
     const convertBtn = document.getElementById("convert-btn");
-    const status = document.getElementById("status");
+    const statusEl = document.getElementById("status");
     const guideTitle = document.getElementById("guide-title");
     const progressText = document.getElementById("progress-text");
     const progressFill = document.getElementById("progress-fill");
     const sectionsEl = document.getElementById("sections");
     const backBtn = document.getElementById("back-btn");
+    const shareBtn = document.getElementById("share-btn");
 
     let state = {};
+    let currentGuide = null;
+    let guideId = null;
 
+    // --- Compression helpers (gzip via CompressionStream) ---
+    async function compress(str) {
+      const stream = new Blob([str]).stream().pipeThrough(new CompressionStream("gzip"));
+      const buf = await new Response(stream).arrayBuffer();
+      return btoa(String.fromCharCode(...new Uint8Array(buf)))
+        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    }
+
+    async function decompress(b64) {
+      const raw = atob(b64.replace(/-/g, "+").replace(/_/g, "/"));
+      const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+      return await new Response(stream).text();
+    }
+
+    // --- Guide ID (simple hash for localStorage key) ---
+    function hashGuide(data) {
+      const s = JSON.stringify(data);
+      let h = 0;
+      for (let i = 0; i < s.length; i++) {
+        h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+      }
+      return "ptn_" + (h >>> 0).toString(36);
+    }
+
+    // --- localStorage progress ---
+    function saveProgress() {
+      if (!guideId) return;
+      localStorage.setItem(guideId, JSON.stringify(state));
+    }
+
+    function loadProgress() {
+      if (!guideId) return;
+      try {
+        const saved = JSON.parse(localStorage.getItem(guideId));
+        if (saved) state = saved;
+      } catch {}
+    }
+
+    // --- Convert button ---
     convertBtn.addEventListener("click", async () => {
       const text = rawInput.value.trim();
       if (!text) return;
 
       convertBtn.disabled = true;
-      status.textContent = "parsing...";
-      status.className = "loading";
+      statusEl.textContent = "parsing...";
+      statusEl.className = "loading";
 
       try {
         const res = await fetch(WORKER_URL, {
@@ -286,28 +353,46 @@
         const data = await res.json();
 
         if (data.error) {
-          status.textContent = data.error;
-          status.className = "error";
+          statusEl.textContent = data.error;
+          statusEl.className = "error";
           convertBtn.disabled = false;
           return;
         }
 
+        currentGuide = data;
+        guideId = hashGuide(data);
+        const encoded = await compress(JSON.stringify(data));
+        history.replaceState(null, "", "#" + encoded);
         showGuide(data);
       } catch (err) {
-        status.textContent = "Failed to connect to server";
-        status.className = "error";
+        statusEl.textContent = "Failed to connect to server";
+        statusEl.className = "error";
         convertBtn.disabled = false;
       }
     });
 
+    // --- Share button ---
+    shareBtn.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(window.location.href);
+      shareBtn.textContent = "copied!";
+      shareBtn.classList.add("copied");
+      setTimeout(() => {
+        shareBtn.textContent = "link";
+        shareBtn.classList.remove("copied");
+      }, 2000);
+    });
+
+    // --- Back button ---
     backBtn.addEventListener("click", () => {
       guideView.style.display = "none";
       inputView.style.display = "block";
-      status.textContent = "";
-      status.className = "";
+      statusEl.textContent = "";
+      statusEl.className = "";
       convertBtn.disabled = false;
+      history.replaceState(null, "", window.location.pathname);
     });
 
+    // --- Render guide ---
     function showGuide(data) {
       inputView.style.display = "none";
       guideView.style.display = "block";
@@ -316,6 +401,17 @@
       state = {};
       let taskIndex = 0;
 
+      // Init state keys first
+      data.sections.forEach(section => {
+        section.items.forEach(item => {
+          if (item.type === "task") state[taskIndex++] = false;
+        });
+      });
+
+      // Load saved progress (overwrites defaults)
+      loadProgress();
+
+      taskIndex = 0;
       sectionsEl.innerHTML = "";
 
       data.sections.forEach((section, si) => {
@@ -323,7 +419,6 @@
         sectionEl.className = "section open";
 
         const taskCount = section.items.filter(i => i.type === "task").length;
-        const sectionTaskStart = taskIndex;
 
         const header = document.createElement("div");
         header.className = "section-header";
@@ -340,18 +435,18 @@
         section.items.forEach(item => {
           if (item.type === "task") {
             const idx = taskIndex++;
-            state[idx] = false;
-
             const taskEl = document.createElement("div");
-            taskEl.className = "task";
+            taskEl.className = "task" + (state[idx] ? " done" : "");
 
             const cb = document.createElement("input");
             cb.type = "checkbox";
             cb.id = `task-${idx}`;
+            cb.checked = !!state[idx];
             cb.addEventListener("change", () => {
               state[idx] = cb.checked;
               taskEl.classList.toggle("done", cb.checked);
               updateProgress(data.sections);
+              saveProgress();
             });
 
             const label = document.createElement("label");
@@ -402,6 +497,19 @@
       d.textContent = str;
       return d.innerHTML;
     }
+
+    // --- Load guide from URL hash on page load ---
+    (async () => {
+      const hash = window.location.hash.slice(1);
+      if (!hash) return;
+      try {
+        const json = await decompress(hash);
+        const data = JSON.parse(json);
+        currentGuide = data;
+        guideId = hashGuide(data);
+        showGuide(data);
+      } catch {}
+    })();
   </script>
 </body>
 </html>
