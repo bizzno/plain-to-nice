@@ -2,3 +2,7 @@
 name = "plain-to-nice"
 main = "worker.js"
 compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "GUIDE_CACHE"
+id = "3f9e25876ef944d6ae73a8f87ddd9e63"

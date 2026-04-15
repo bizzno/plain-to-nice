@@ -34,6 +34,22 @@ export default {
       });
     }
 
+    // Hash input text for cache key
+    const encoder = new TextEncoder();
+    const hashBuf = await crypto.subtle.digest("SHA-256", encoder.encode(body.text.trim()));
+    const cacheKey = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+
+    // Check KV cache
+    const cached = await env.GUIDE_CACHE.get(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      parsed._cached = true;
+      return new Response(JSON.stringify(parsed), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
     const systemPrompt = `Convert guide text to JSON. Output ONLY raw JSON. No markdown fences, no explanation, nothing before or after the JSON object.
 
 Return this exact structure:
@@ -46,7 +62,7 @@ Rules:
 - Keep text concise but preserve important detail
 - Always return valid JSON`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_KEY}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${env.GEMINI_KEY}`;
 
     let geminiRes;
     try {
@@ -56,7 +72,7 @@ Rules:
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: "user", parts: [{ text: body.text }] }],
-          generationConfig: { maxOutputTokens: 2048, temperature: 0.1 },
+          generationConfig: { maxOutputTokens: 65536, temperature: 0.1, responseMimeType: "application/json" },
         }),
       });
     } catch (err) {
@@ -84,25 +100,32 @@ Rules:
       });
     }
 
-    const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const parts = geminiData?.candidates?.[0]?.content?.parts || [];
+    let rawText = parts.filter(p => p.text).map(p => p.text).join("\n");
+    rawText = rawText.replace(/```json\s*/g, "").replace(/```\s*/g, "");
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {
-      return new Response(JSON.stringify({ error: "Could not parse response" }), {
+      return new Response(JSON.stringify({ error: "Could not parse response (no match)", debug: rawText.slice(0, 500) }), {
         status: 502,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }
+
+    const finishReason = geminiData?.candidates?.[0]?.finishReason || "unknown";
 
     let parsed;
     try {
       parsed = JSON.parse(jsonMatch[0]);
-    } catch {
-      return new Response(JSON.stringify({ error: "Could not parse response" }), {
+    } catch (e) {
+      return new Response(JSON.stringify({ error: "Could not parse response (invalid json)", finishReason, debugLen: rawText.length, debugEnd: rawText.slice(-200) }), {
         status: 502,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }
+
+    // Cache in KV (no expiration)
+    await env.GUIDE_CACHE.put(cacheKey, JSON.stringify(parsed));
 
     return new Response(JSON.stringify(parsed), {
       status: 200,
