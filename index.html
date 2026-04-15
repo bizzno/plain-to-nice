@@ -251,21 +251,6 @@
     .btn-share:hover { border-color: var(--border2); color: var(--text); }
     .btn-share.copied { color: var(--accent); border-color: var(--accent); }
 
-    .cached-notice {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.8rem;
-      color: var(--muted);
-      margin-bottom: 1rem;
-      padding: 0.5rem 0.75rem;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-    }
-    .cached-notice a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-    .cached-notice a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -375,13 +360,12 @@
           return;
         }
 
-        const wasCached = !!data._cached;
         delete data._cached;
         currentGuide = data;
         guideId = hashGuide(data);
         const encoded = await compress(JSON.stringify(data));
         history.replaceState(null, "", "#" + encoded);
-        showGuide(data, wasCached);
+        showGuide(data);
       } catch (err) {
         statusEl.textContent = "Failed to connect to server";
         statusEl.className = "error";
@@ -411,20 +395,10 @@
     });
 
     // --- Render guide ---
-    function showGuide(data, wasCached) {
+    function showGuide(data) {
       inputView.style.display = "none";
       guideView.style.display = "block";
       guideTitle.textContent = data.title || "Guide";
-
-      // Show cached notice
-      const oldNotice = document.querySelector(".cached-notice");
-      if (oldNotice) oldNotice.remove();
-      if (wasCached) {
-        const notice = document.createElement("div");
-        notice.className = "cached-notice";
-        notice.innerHTML = `this guide already exists — <a href="${window.location.href}">share this link</a> instead of converting again`;
-        sectionsEl.parentNode.insertBefore(notice, sectionsEl);
-      }
 
       state = {};
       let taskIndex = 0;
