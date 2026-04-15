@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>plain to nice</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0e0e;
+      --bg2: #161616;
+      --bg3: #1e1e1e;
+      --border: rgba(255,255,255,0.08);
+      --border2: rgba(255,255,255,0.14);
+      --text: #f0f0f0;
+      --muted: #888;
+      --dim: #555;
+      --accent: #c8f135;
+      --danger: #ff6b6b;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'IBM Plex Sans', sans-serif;
+      font-weight: 400;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+    }
+
+    /* Logo */
+    .logo {
+      font-family: 'IBM Plex Mono', monospace;
+      font-weight: 500;
+      font-size: 1.5rem;
+      margin-bottom: 2rem;
+      user-select: none;
+    }
+    .logo .accent { color: var(--accent); }
+
+    /* Input view */
+    #input-view textarea {
+      width: 100%;
+      min-height: 180px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.875rem;
+      padding: 1rem;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #input-view textarea:focus {
+      border-color: var(--border2);
+    }
+    #input-view textarea::placeholder {
+      color: var(--dim);
+    }
+
+    .input-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 0.75rem;
+    }
+
+    #status {
+      font-size: 0.85rem;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    #status.loading { color: var(--accent); }
+    #status.error { color: var(--danger); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 0.6rem 1.4rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-weight: 500;
+      font-size: 0.875rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      white-space: nowrap;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Guide view */
+    #guide-view { display: none; }
+
+    .guide-title {
+      font-family: 'IBM Plex Mono', monospace;
+      font-weight: 500;
+      font-size: 1.25rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .progress-text {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 2px;
+      background: var(--bg3);
+      border-radius: 1px;
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 1px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+
+    /* Sections */
+    .section { margin-bottom: 0.5rem; }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 0;
+      cursor: pointer;
+      user-select: none;
+    }
+    .section-header:hover { opacity: 0.8; }
+
+    .caret {
+      font-size: 0.7rem;
+      color: var(--muted);
+      transition: transform 0.2s;
+      display: inline-block;
+      width: 1rem;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .section.open .caret { transform: rotate(90deg); }
+
+    .section-title {
+      font-family: 'IBM Plex Mono', monospace;
+      font-weight: 500;
+      font-size: 0.95rem;
+      flex: 1;
+    }
+
+    .section-count {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--dim);
+      flex-shrink: 0;
+    }
+
+    .section-body {
+      display: none;
+      padding-left: 1.5rem;
+      padding-bottom: 0.5rem;
+    }
+    .section.open .section-body { display: block; }
+
+    /* Tasks */
+    .task {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.35rem 0;
+    }
+    .task input[type="checkbox"] {
+      margin-top: 0.25rem;
+      accent-color: var(--accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .task label {
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: opacity 0.2s, text-decoration 0.2s;
+    }
+    .task.done label {
+      text-decoration: line-through;
+      opacity: 0.4;
+    }
+
+    /* Notes */
+    .note {
+      border-left: 2px solid var(--border2);
+      padding: 0.35rem 0 0.35rem 0.75rem;
+      margin: 0.25rem 0;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    /* Back button */
+    .btn-back {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.5rem 1rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 2rem;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-back:hover {
+      border-color: var(--border2);
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">plain-to-<span class="accent">nice</span></div>
+
+    <div id="input-view">
+      <textarea id="raw-input" placeholder="Paste your raw guide text here — pastebin dumps, markdown, numbered lists, plain text..."></textarea>
+      <div class="input-footer">
+        <span id="status"></span>
+        <button class="btn-primary" id="convert-btn">Convert &rarr;</button>
+      </div>
+    </div>
+
+    <div id="guide-view">
+      <div class="guide-title" id="guide-title"></div>
+      <div class="progress-text" id="progress-text"></div>
+      <div class="progress-bar"><div class="progress-bar-fill" id="progress-fill"></div></div>
+      <div id="sections"></div>
+      <button class="btn-back" id="back-btn">&larr; paste another</button>
+    </div>
+  </div>
+
+  <script>
+    // !! Replace with your Cloudflare Worker URL after deploying !!
+    const WORKER_URL = "https://plain-to-nice.alexander-4c2.workers.dev";
+
+    const inputView = document.getElementById("input-view");
+    const guideView = document.getElementById("guide-view");
+    const rawInput = document.getElementById("raw-input");
+    const convertBtn = document.getElementById("convert-btn");
+    const status = document.getElementById("status");
+    const guideTitle = document.getElementById("guide-title");
+    const progressText = document.getElementById("progress-text");
+    const progressFill = document.getElementById("progress-fill");
+    const sectionsEl = document.getElementById("sections");
+    const backBtn = document.getElementById("back-btn");
+
+    let state = {};
+
+    convertBtn.addEventListener("click", async () => {
+      const text = rawInput.value.trim();
+      if (!text) return;
+
+      convertBtn.disabled = true;
+      status.textContent = "parsing...";
+      status.className = "loading";
+
+      try {
+        const res = await fetch(WORKER_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+          status.textContent = data.error;
+          status.className = "error";
+          convertBtn.disabled = false;
+          return;
+        }
+
+        showGuide(data);
+      } catch (err) {
+        status.textContent = "Failed to connect to server";
+        status.className = "error";
+        convertBtn.disabled = false;
+      }
+    });
+
+    backBtn.addEventListener("click", () => {
+      guideView.style.display = "none";
+      inputView.style.display = "block";
+      status.textContent = "";
+      status.className = "";
+      convertBtn.disabled = false;
+    });
+
+    function showGuide(data) {
+      inputView.style.display = "none";
+      guideView.style.display = "block";
+      guideTitle.textContent = data.title || "Guide";
+
+      state = {};
+      let taskIndex = 0;
+
+      sectionsEl.innerHTML = "";
+
+      data.sections.forEach((section, si) => {
+        const sectionEl = document.createElement("div");
+        sectionEl.className = "section open";
+
+        const taskCount = section.items.filter(i => i.type === "task").length;
+        const sectionTaskStart = taskIndex;
+
+        const header = document.createElement("div");
+        header.className = "section-header";
+        header.innerHTML = `
+          <span class="caret">&#9654;</span>
+          <span class="section-title">${esc(section.title)}</span>
+          <span class="section-count" data-section="${si}">0/${taskCount}</span>
+        `;
+        header.addEventListener("click", () => sectionEl.classList.toggle("open"));
+
+        const body = document.createElement("div");
+        body.className = "section-body";
+
+        section.items.forEach(item => {
+          if (item.type === "task") {
+            const idx = taskIndex++;
+            state[idx] = false;
+
+            const taskEl = document.createElement("div");
+            taskEl.className = "task";
+
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.id = `task-${idx}`;
+            cb.addEventListener("change", () => {
+              state[idx] = cb.checked;
+              taskEl.classList.toggle("done", cb.checked);
+              updateProgress(data.sections);
+            });
+
+            const label = document.createElement("label");
+            label.htmlFor = `task-${idx}`;
+            label.textContent = item.text;
+
+            taskEl.appendChild(cb);
+            taskEl.appendChild(label);
+            body.appendChild(taskEl);
+          } else {
+            const noteEl = document.createElement("div");
+            noteEl.className = "note";
+            noteEl.textContent = item.text;
+            body.appendChild(noteEl);
+          }
+        });
+
+        sectionEl.appendChild(header);
+        sectionEl.appendChild(body);
+        sectionsEl.appendChild(sectionEl);
+      });
+
+      updateProgress(data.sections);
+    }
+
+    function updateProgress(sections) {
+      const total = Object.keys(state).length;
+      const done = Object.values(state).filter(Boolean).length;
+
+      progressText.textContent = `${done} of ${total} done`;
+      progressFill.style.width = total ? `${(done / total) * 100}%` : "0%";
+
+      let taskIndex = 0;
+      sections.forEach((section, si) => {
+        const taskCount = section.items.filter(i => i.type === "task").length;
+        let sectionDone = 0;
+        for (let i = 0; i < taskCount; i++) {
+          if (state[taskIndex + i]) sectionDone++;
+        }
+        const countEl = document.querySelector(`[data-section="${si}"]`);
+        if (countEl) countEl.textContent = `${sectionDone}/${taskCount}`;
+        taskIndex += taskCount;
+      });
+    }
+
+    function esc(str) {
+      const d = document.createElement("div");
+      d.textContent = str;
+      return d.innerHTML;
+    }
+  </script>
+</body>
+</html>
