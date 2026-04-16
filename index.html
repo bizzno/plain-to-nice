@@ -296,21 +296,6 @@
     let currentGuide = null;
     let guideId = null;
 
-    // --- Compression helpers (gzip via CompressionStream) ---
-    async function compress(str) {
-      const stream = new Blob([str]).stream().pipeThrough(new CompressionStream("gzip"));
-      const buf = await new Response(stream).arrayBuffer();
-      return btoa(String.fromCharCode(...new Uint8Array(buf)))
-        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    }
-
-    async function decompress(b64) {
-      const raw = atob(b64.replace(/-/g, "+").replace(/_/g, "/"));
-      const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
-      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
-      return await new Response(stream).text();
-    }
-
     // --- Guide ID (simple hash for localStorage key) ---
     function hashGuide(data) {
       const s = JSON.stringify(data);
@@ -360,11 +345,12 @@
           return;
         }
 
+        const shareId = data._shareId;
         delete data._cached;
+        delete data._shareId;
         currentGuide = data;
         guideId = hashGuide(data);
-        const encoded = await compress(JSON.stringify(data));
-        history.replaceState(null, "", "#" + encoded);
+        if (shareId) history.replaceState(null, "", "#" + shareId);
         showGuide(data);
       } catch (err) {
         statusEl.textContent = "Failed to connect to server";
@@ -504,8 +490,26 @@
     (async () => {
       const hash = window.location.hash.slice(1);
       if (!hash) return;
+
+      // Short ID format (10 hex chars)
+      if (/^[a-f0-9]{10}$/.test(hash)) {
+        try {
+          const res = await fetch(`${WORKER_URL}/g/${hash}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          currentGuide = data;
+          guideId = hashGuide(data);
+          showGuide(data);
+        } catch {}
+        return;
+      }
+
+      // Legacy: try decompressing old-style URLs
       try {
-        const json = await decompress(hash);
+        const raw = atob(hash.replace(/-/g, "+").replace(/_/g, "/"));
+        const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+        const json = await new Response(stream).text();
         const data = JSON.parse(json);
         currentGuide = data;
         guideId = hashGuide(data);

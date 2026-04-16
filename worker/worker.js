@@ -1,13 +1,31 @@
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     };
 
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
+    }
+
+    // GET /g/:id — retrieve a shared guide by short ID
+    const shareMatch = url.pathname.match(/^\/g\/([a-zA-Z0-9_-]+)$/);
+    if (request.method === "GET" && shareMatch) {
+      const id = shareMatch[1];
+      const data = await env.GUIDE_CACHE.get(`share:${id}`);
+      if (!data) {
+        return new Response(JSON.stringify({ error: "Guide not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+      return new Response(data, {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
     }
 
     if (request.method !== "POST") {
@@ -44,6 +62,9 @@ export default {
     if (cached) {
       const parsed = JSON.parse(cached);
       parsed._cached = true;
+      parsed._shareId = cacheKey.slice(0, 10);
+      // Ensure share key exists for cached guides
+      await env.GUIDE_CACHE.put(`share:${cacheKey.slice(0, 10)}`, cached);
       return new Response(JSON.stringify(parsed), {
         status: 200,
         headers: { "Content-Type": "application/json", ...corsHeaders },
@@ -125,8 +146,14 @@ Rules:
     }
 
     // Cache in KV (no expiration)
-    await env.GUIDE_CACHE.put(cacheKey, JSON.stringify(parsed));
+    const guideJson = JSON.stringify(parsed);
+    const shareId = cacheKey.slice(0, 10);
+    await Promise.all([
+      env.GUIDE_CACHE.put(cacheKey, guideJson),
+      env.GUIDE_CACHE.put(`share:${shareId}`, guideJson),
+    ]);
 
+    parsed._shareId = shareId;
     return new Response(JSON.stringify(parsed), {
       status: 200,
       headers: { "Content-Type": "application/json", ...corsHeaders },
